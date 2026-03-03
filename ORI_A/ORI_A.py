@@ -1,4 +1,5 @@
 import dataclasses
+import json
 
 from dataclasses import Field, dataclass
 from enum import StrEnum
@@ -52,12 +53,27 @@ class Serializable:
             for val in field_value:
                 if isinstance(val, Serializable):
                     root_elem.append(val.to_xml(field_name))
-                else:
+                elif isinstance(val, bool):
                     # micro-optim: create subelem and .text content in one go
+                    ET.SubElement(root_elem, field_name).text = str(val).lower()
+                else:
                     ET.SubElement(root_elem, field_name).text = str(val)
 
         return root_elem
 
+    # Think this maybe should be something done in (post)init? thay way you can make it a property
+    def _ori_aliases(self) -> dict[str, str]:
+        """Override this function when property names in ORI and ORI-A differ"""
+        return {f.name: f.name for f in dataclasses.fields(self)}
+
+    # note: the performance of all of this is not amazing. To fix this, we must precompute stuff
+    def to_ori_json(self) -> str:
+        strip_none = lambda d: {k: v for k, v in d if v is not None}
+        # FIXME: asdict is not "recursive". Other Serializables/dataclasses are treated as dicts.
+        # I think this causes self._ori_aliases() in subclasses to be ignored.
+        d = dataclasses.asdict(self, dict_factory=strip_none)
+        aliased = {self._ori_aliases()[k]: v for k, v in d.items()}
+        return json.dumps(aliased)
 
 
 @dataclass
@@ -71,6 +87,10 @@ class GremiumGegevens(Serializable):
 
     naam: str
     identificatie: str = None
+
+    # instead of complex system with aliases and transformers, maybe just override a single method?
+    def _ori_aliases(self):
+        return {"naam": "gremiumnaam", "identificatie": "gremiumidentificatie"}
 
 
 @dataclass
